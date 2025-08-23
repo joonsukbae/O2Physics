@@ -134,7 +134,7 @@ struct JetBackgroundAnalysisTask {
         }
       }
     }
-    
+
     // Check if jets exist before accessing them
     std::cout << "bkg fluctuations jets size: " << jets.size() << std::endl;
     if (jets.size() > 0) {
