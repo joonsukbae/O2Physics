@@ -95,6 +95,7 @@ struct JetSpectraCharged {
   float configSwitchHigh = 9998.0;
 
   float ptHardCalcMethodSwitch = 999.0;
+  static constexpr float kBrokenPtHardSentinel = 1.0f;
 
   enum AcceptSplitCollisionsOptions {
     NonSplitOnly = 0,
@@ -929,19 +930,12 @@ struct JetSpectraCharged {
     if (!applyCollisionCuts(collision, fillHistograms, isWeighted, eventWeight)) {
       return;
     }
-    // Disambiguate the cross-table lookup: the joined iterator carries an index
-    // to JMcCollisions via JMcCollisionLbs, and the explicit subscription
-    // `aod::JetMcCollisions` aliases the same base. Calling
-    // collision.mcCollision() makes the auto-resolver bind to the wrong target
-    // (FATAL "wrong-type bind in mcCollision_as"). Look up explicitly through
-    // the named subscribed table instead.
+    // collision.mcCollision() auto-resolves to the wrong JMcCollisions binding here; bind via rawIteratorAt.
     float ptHardFromMc = ptHardCalcMethodSwitch;
     if (collision.mcCollisionId() >= 0) {
       float storedPtHard = mccollisions.rawIteratorAt(collision.mcCollisionId()).ptHard();
-      // Some current MC productions (e.g. LHC26b5) ship a placeholder
-      // ptHard = 1.0 for all events; treat that as "no valid stored ptHard"
-      // and fall through to the weight-derived estimator.
-      if (storedPtHard > 1.0f && storedPtHard < ptHardCalcMethodSwitch) {
+      // LHC26b5 ships placeholder ptHard=1.0; fall back to weight-derived.
+      if (storedPtHard > kBrokenPtHardSentinel && storedPtHard < ptHardCalcMethodSwitch) {
         ptHardFromMc = storedPtHard;
       }
     }
@@ -977,7 +971,7 @@ struct JetSpectraCharged {
     float ptHardFromMc = ptHardCalcMethodSwitch;
     if (collision.mcCollisionId() >= 0) {
       float storedPtHard = mccollisions.rawIteratorAt(collision.mcCollisionId()).ptHard();
-      if (storedPtHard > 1.0f && storedPtHard < ptHardCalcMethodSwitch) {
+      if (storedPtHard > kBrokenPtHardSentinel && storedPtHard < ptHardCalcMethodSwitch) {
         ptHardFromMc = storedPtHard;
       }
     }
@@ -1224,11 +1218,8 @@ struct JetSpectraCharged {
     if (!applyMCCollisionCuts(mccollision, collisions, fillHistograms, isWeighted, eventWeight)) {
       return;
     }
-    // Some current MC productions (e.g. LHC26b5) ship a placeholder ptHard=1.0
-    // for all events; treat that as "no valid stored ptHard" and fall back to
-    // the weight-derived estimator (matching the documented intent of the
-    // existing sentinel guard).
-    float pTHat = (mccollision.ptHard() > 1.0f && mccollision.ptHard() < ptHardCalcMethodSwitch) ? mccollision.ptHard() : simPtRef / (std::pow(eventWeight, 1.0 / pTHatExponent));
+    // LHC26b5 ships placeholder ptHard=1.0; fall back to weight-derived.
+    float pTHat = (mccollision.ptHard() > kBrokenPtHardSentinel && mccollision.ptHard() < ptHardCalcMethodSwitch) ? mccollision.ptHard() : simPtRef / (std::pow(eventWeight, 1.0 / pTHatExponent));
     for (auto const& jet : jets) {
       if (!jetfindingutilities::isInEtaAcceptance(jet, jetEtaMin, jetEtaMax, trackEtaMin, trackEtaMax)) {
         continue;
@@ -1262,7 +1253,7 @@ struct JetSpectraCharged {
     }
     // See note in processSpectraMCPWeighted re: ptHard=1.0 placeholder in
     // current LHC26b5-class MC.
-    float pTHat = (mccollision.ptHard() > 1.0f && mccollision.ptHard() < ptHardCalcMethodSwitch) ? mccollision.ptHard() : simPtRef / (std::pow(eventWeight, 1.0 / pTHatExponent));
+    float pTHat = (mccollision.ptHard() > kBrokenPtHardSentinel && mccollision.ptHard() < ptHardCalcMethodSwitch) ? mccollision.ptHard() : simPtRef / (std::pow(eventWeight, 1.0 / pTHatExponent));
     registry.fill(HIST("h_mccollisions_rho"), mccollision.rho(), eventWeight);
 
     for (auto const& jet : jets) {
@@ -1358,7 +1349,7 @@ struct JetSpectraCharged {
     float ptHardFromMc = ptHardCalcMethodSwitch;
     if (collision.mcCollisionId() >= 0) {
       float storedPtHard = mccollisions.rawIteratorAt(collision.mcCollisionId()).ptHard();
-      if (storedPtHard > 1.0f && storedPtHard < ptHardCalcMethodSwitch) {
+      if (storedPtHard > kBrokenPtHardSentinel && storedPtHard < ptHardCalcMethodSwitch) {
         ptHardFromMc = storedPtHard;
       }
     }
@@ -1413,7 +1404,7 @@ struct JetSpectraCharged {
     float ptHardFromMc = ptHardCalcMethodSwitch;
     if (hasMc) {
       float storedPtHard = collision.mcCollision_as<JetBkgRhoMcCollisions>().ptHard();
-      if (storedPtHard > 1.0f && storedPtHard < ptHardCalcMethodSwitch) {
+      if (storedPtHard > kBrokenPtHardSentinel && storedPtHard < ptHardCalcMethodSwitch) {
         ptHardFromMc = storedPtHard;
       }
     }
