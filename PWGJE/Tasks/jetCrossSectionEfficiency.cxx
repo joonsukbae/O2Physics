@@ -91,29 +91,37 @@ struct JetCrossSectionEfficiency {
   static constexpr float kBrokenPtHardSentinel = 1.0f;
 
   // CollRecoFirst: reco collision required first; BC bits read from the reco-coll EvSels.
-  static constexpr int kBinCRF_Inel = 1;
-  static constexpr int kBinCRF_RctPass = 2;
-  static constexpr int kBinCRF_HasColl = 3;
-  static constexpr int kBinCRF_Zreco = 4;
-  static constexpr int kBinCRF_NoSplit = 5;
-  static constexpr int kBinCRF_TVX = 6;
-  static constexpr int kBinCRF_TFB = 7;
-  static constexpr int kBinCRF_ROFB = 8;
-  static constexpr int kBinCRF_SBP = 9;
-  static constexpr int kBinCRF_N = 9;
+  enum class BinCRF : int {
+    Inel = 1,
+    RctPass,
+    HasColl,
+    Zreco,
+    NoSplit,
+    TVX,
+    TFB,
+    ROFB,
+    SBP,
+    N = SBP // last bin index (alias)
+  };
 
   // BcBitsFirst: BC bits read from the MC truth BC; SBP from a Preslice count
   // (exactly one MC collision per truth BC) so it works before requiring reco.
-  static constexpr int kBinBBF_Inel = 1;
-  static constexpr int kBinBBF_RctPass = 2;
-  static constexpr int kBinBBF_TVX = 3;
-  static constexpr int kBinBBF_TFB = 4;
-  static constexpr int kBinBBF_ROFB = 5;
-  static constexpr int kBinBBF_TruthSBP = 6;
-  static constexpr int kBinBBF_HasColl = 7;
-  static constexpr int kBinBBF_Zreco = 8;
-  static constexpr int kBinBBF_NoSplit = 9;
-  static constexpr int kBinBBF_N = 9;
+  enum class BinBBF : int {
+    Inel = 1,
+    RctPass,
+    TVX,
+    TFB,
+    ROFB,
+    TruthSBP,
+    HasColl,
+    Zreco,
+    NoSplit,
+    N = NoSplit // last bin index (alias)
+  };
+
+  // Convenience: convert scoped enums to int for ROOT bin-label / axis-spec calls.
+  static constexpr int toInt(BinCRF b) { return static_cast<int>(b); }
+  static constexpr int toInt(BinBBF b) { return static_cast<int>(b); }
 
   Preslice<aod::JetMcCollisions> mcCollsPerBC = aod::jmccollision::bcId;
 
@@ -126,93 +134,99 @@ struct JetCrossSectionEfficiency {
     rctChecker.init(static_cast<std::string>(rctSelectionsLabel));
     rctMask = rctChecker.value();
 
-    const std::string es = eventSelections;
-    if (es == "selTVX") {
-      applyTFB = false;
-      applyROFB = false;
-      applySBP = false;
-    } else if (es == "selMC") {
-      applyTFB = true;
-      applyROFB = false;
-      applySBP = false;
-    } else if (es == "selMCFull") {
-      applyTFB = true;
-      applyROFB = false;
-      applySBP = true;
-    } else if (es == "sel8") {
-      applyTFB = true;
-      applyROFB = true;
-      applySBP = false;
-    } else if (es == "sel8Full") {
-      applyTFB = true;
-      applyROFB = true;
-      applySBP = true;
-    } else {
-      LOGF(fatal, "Configurable eventSelections=%s not supported; use selTVX, selMC, selMCFull, sel8, or sel8Full", es.c_str());
+    enum class EvSelPreset : uint8_t { SelTVX, SelMC, SelMCFull, Sel8, Sel8Full, Invalid };
+    auto parsePreset = [](const std::string& s) {
+      if (s == "selTVX") return EvSelPreset::SelTVX;
+      if (s == "selMC") return EvSelPreset::SelMC;
+      if (s == "selMCFull") return EvSelPreset::SelMCFull;
+      if (s == "sel8") return EvSelPreset::Sel8;
+      if (s == "sel8Full") return EvSelPreset::Sel8Full;
+      return EvSelPreset::Invalid;
+    };
+    switch (parsePreset(eventSelections)) {
+      case EvSelPreset::SelTVX:
+        applyTFB = false; applyROFB = false; applySBP = false;
+        break;
+      case EvSelPreset::SelMC:
+        applyTFB = true;  applyROFB = false; applySBP = false;
+        break;
+      case EvSelPreset::SelMCFull:
+        applyTFB = true;  applyROFB = false; applySBP = true;
+        break;
+      case EvSelPreset::Sel8:
+        applyTFB = true;  applyROFB = true;  applySBP = false;
+        break;
+      case EvSelPreset::Sel8Full:
+        applyTFB = true;  applyROFB = true;  applySBP = true;
+        break;
+      default:
+        LOGF(fatal, "Configurable eventSelections=%s not supported; use selTVX, selMC, selMCFull, sel8, or sel8Full",
+             static_cast<std::string>(eventSelections).c_str());
+        break;
     }
 
     AxisSpec jetPtAxis = {200, 0., jetPtMax, "#it{p}_{T} (GeV/#it{c})"};
 
     if (doprocessCrossSectionEfficiency) {
-      AxisSpec axCRF = {kBinCRF_N, 0.5, static_cast<double>(kBinCRF_N) + 0.5, "event selection (CollRecoFirst)"};
+      AxisSpec axCRF = {toInt(BinCRF::N), 0.5, static_cast<double>(toInt(BinCRF::N)) + 0.5, "event selection (CollRecoFirst)"};
       registry.add("h2_jet_pt_part_eventselection_collRecoFirst",
                    "part jet pT vs event selection (CollRecoFirst);#it{p}_{T,jet}^{part} (GeV/#it{c});event selection;counts",
                    {HistType::kTH2F, {jetPtAxis, axCRF}});
       auto hCRF2 = registry.get<TH2>(HIST("h2_jet_pt_part_eventselection_collRecoFirst"));
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_Inel, "INEL");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_RctPass, "+RCT_pass");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_HasColl, "+hasRecoColl");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_Zreco, "+|zReco|<10");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_NoSplit, "+noSplit");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_TVX, "+kTVX");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_TFB, "+kNoTFB");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_ROFB, "+kNoITSROFB");
-      hCRF2->GetYaxis()->SetBinLabel(kBinCRF_SBP, "+kNoSBP");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::Inel), "INEL");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::RctPass), "+RCT_pass");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::HasColl), "+hasRecoColl");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::Zreco), "+|zReco|<10");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::NoSplit), "+noSplit");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::TVX), "+kTVX");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::TFB), "+kNoTFB");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::ROFB), "+kNoITSROFB");
+      hCRF2->GetYaxis()->SetBinLabel(toInt(BinCRF::SBP), "+kNoSBP");
 
       registry.add("h_mccollisions_eventselection_collRecoFirst",
                    "number of mc events vs event selection (CollRecoFirst);event selection;entries",
-                   {HistType::kTH1F, {{kBinCRF_N, 0.5, static_cast<double>(kBinCRF_N) + 0.5}}});
+                   {HistType::kTH1F, {{toInt(BinCRF::N), 0.5, static_cast<double>(toInt(BinCRF::N)) + 0.5}}});
       auto hCRF1 = registry.get<TH1>(HIST("h_mccollisions_eventselection_collRecoFirst"));
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_Inel, "INEL");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_RctPass, "+RCT_pass");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_HasColl, "+hasRecoColl");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_Zreco, "+|zReco|<10");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_NoSplit, "+noSplit");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_TVX, "+kTVX");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_TFB, "+kNoTFB");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_ROFB, "+kNoITSROFB");
-      hCRF1->GetXaxis()->SetBinLabel(kBinCRF_SBP, "+kNoSBP");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::Inel), "INEL");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::RctPass), "+RCT_pass");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::HasColl), "+hasRecoColl");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::Zreco), "+|zReco|<10");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::NoSplit), "+noSplit");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::TVX), "+kTVX");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::TFB), "+kNoTFB");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::ROFB), "+kNoITSROFB");
+      hCRF1->GetXaxis()->SetBinLabel(toInt(BinCRF::SBP), "+kNoSBP");
     }
 
     if (doprocessCrossSectionEfficiencyBcBitsFirst) {
-      AxisSpec axBBF = {kBinBBF_N, 0.5, static_cast<double>(kBinBBF_N) + 0.5, "event selection (BcBitsFirst)"};
+      AxisSpec axBBF = {toInt(BinBBF::N), 0.5, static_cast<double>(toInt(BinBBF::N)) + 0.5, "event selection (BcBitsFirst)"};
       registry.add("h2_jet_pt_part_eventselection_bcBitsFirst",
                    "part jet pT vs event selection (BcBitsFirst);#it{p}_{T,jet}^{part} (GeV/#it{c});event selection;counts",
                    {HistType::kTH2F, {jetPtAxis, axBBF}});
       auto hBBF2 = registry.get<TH2>(HIST("h2_jet_pt_part_eventselection_bcBitsFirst"));
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_Inel, "INEL");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_RctPass, "+RCT_pass");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_TVX, "+kTVX(truth)");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_TFB, "+kNoTFB(truth)");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_ROFB, "+kNoITSROFB(truth)");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_TruthSBP, "+kNoSBP(truth)");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_HasColl, "+hasColl");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_Zreco, "+|zReco|<10");
-      hBBF2->GetYaxis()->SetBinLabel(kBinBBF_NoSplit, "+noSplit");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::Inel), "INEL");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::RctPass), "+RCT_pass");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::TVX), "+kTVX(truth)");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::TFB), "+kNoTFB(truth)");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::ROFB), "+kNoITSROFB(truth)");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::TruthSBP), "+kNoSBP(truth)");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::HasColl), "+hasColl");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::Zreco), "+|zReco|<10");
+      hBBF2->GetYaxis()->SetBinLabel(toInt(BinBBF::NoSplit), "+noSplit");
 
       registry.add("h_mccollisions_eventselection_bcBitsFirst",
                    "number of mc events vs event selection (BcBitsFirst);event selection;entries",
-                   {HistType::kTH1F, {{kBinBBF_N, 0.5, static_cast<double>(kBinBBF_N) + 0.5}}});
+                   {HistType::kTH1F, {{toInt(BinBBF::N), 0.5, static_cast<double>(toInt(BinBBF::N)) + 0.5}}});
       auto hBBF1 = registry.get<TH1>(HIST("h_mccollisions_eventselection_bcBitsFirst"));
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_Inel, "INEL");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_RctPass, "+RCT_pass");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_TVX, "+kTVX(truth)");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_TFB, "+kNoTFB(truth)");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_ROFB, "+kNoITSROFB(truth)");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_TruthSBP, "+kNoSBP(truth)");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_HasColl, "+hasColl");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_Zreco, "+|zReco|<10");
-      hBBF1->GetXaxis()->SetBinLabel(kBinBBF_NoSplit, "+noSplit");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::Inel), "INEL");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::RctPass), "+RCT_pass");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::TVX), "+kTVX(truth)");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::TFB), "+kNoTFB(truth)");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::ROFB), "+kNoITSROFB(truth)");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::TruthSBP), "+kNoSBP(truth)");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::HasColl), "+hasColl");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::Zreco), "+|zReco|<10");
+      hBBF1->GetXaxis()->SetBinLabel(toInt(BinBBF::NoSplit), "+noSplit");
     }
   }
 
@@ -299,7 +313,7 @@ struct JetCrossSectionEfficiency {
     }
 
     bool passesRct = applyRCT ? (mccollision.bc_as<aod::JBCs>().rct_raw() & rctMask) == 0 : true;
-    bool pass[kBinCRF_N + 1] = {false, true, passesRct, hasRecoColl, passesZvtxCutReco,
+    bool pass[toInt(BinCRF::N) + 1] = {false, true, passesRct, hasRecoColl, passesZvtxCutReco,
                                 hasRecoColl && noSplitPass, passesTVX,
                                 applyTFB ? passesNoTFB : true,
                                 applyROFB ? passesNoITSROFB : true,
@@ -309,7 +323,7 @@ struct JetCrossSectionEfficiency {
     float weight = mccollision.weight();
 
     int sMax = 0;
-    for (int s = kBinCRF_Inel; s <= kBinCRF_N; ++s) {
+    for (int s = toInt(BinCRF::Inel); s <= toInt(BinCRF::N); ++s) {
       if (!pass[s])
         break;
       registry.fill(HIST("h_mccollisions_eventselection_collRecoFirst"), static_cast<double>(s), weight);
@@ -330,7 +344,7 @@ struct JetCrossSectionEfficiency {
           !isAcceptedJet<aod::JetParticles>(jet)) {
         continue;
       }
-      for (int s = kBinCRF_Inel; s <= sMax; ++s) {
+      for (int s = toInt(BinCRF::Inel); s <= sMax; ++s) {
         registry.fill(HIST("h2_jet_pt_part_eventselection_collRecoFirst"), jet.pt(), static_cast<double>(s), weight);
       }
     }
@@ -375,7 +389,7 @@ struct JetCrossSectionEfficiency {
     bool noSplitPass = (acceptSplitCollisions == NonSplitOnly) ? (collisions.size() == 1) : true;
 
     bool passesRct = applyRCT ? (truthBC.rct_raw() & rctMask) == 0 : true;
-    bool pass[kBinBBF_N + 1] = {false, true, passesRct, passesTVXTruth,
+    bool pass[toInt(BinBBF::N) + 1] = {false, true, passesRct, passesTVXTruth,
                                 applyTFB ? passesNoTFBTruth : true,
                                 applyROFB ? passesNoITSROFBTruth : true,
                                 applySBP ? truthNoSBP : true,
@@ -384,7 +398,7 @@ struct JetCrossSectionEfficiency {
     float weight = mccollision.weight();
 
     int sMax = 0;
-    for (int s = kBinBBF_Inel; s <= kBinBBF_N; ++s) {
+    for (int s = toInt(BinBBF::Inel); s <= toInt(BinBBF::N); ++s) {
       if (!pass[s])
         break;
       registry.fill(HIST("h_mccollisions_eventselection_bcBitsFirst"), static_cast<double>(s), weight);
@@ -405,7 +419,7 @@ struct JetCrossSectionEfficiency {
           !isAcceptedJet<aod::JetParticles>(jet)) {
         continue;
       }
-      for (int s = kBinBBF_Inel; s <= sMax; ++s) {
+      for (int s = toInt(BinBBF::Inel); s <= sMax; ++s) {
         registry.fill(HIST("h2_jet_pt_part_eventselection_bcBitsFirst"), jet.pt(), static_cast<double>(s), weight);
       }
     }
