@@ -355,7 +355,7 @@ struct JetFinderQATask {
       registry.add("h3_jet_r_jet_pt_track_phi_Triggered_Both", "#it{R}_{jet};#it{p}_{T,jet} (GeV/#it{c});#varphi_{jet tracks}", {HistType::kTH3F, {{jetRadiiBins, ""}, jetPtAxis, {160, -1.0, 7.}}});
     }
 
-    if (doprocessTracks || doprocessTracksWeighted) {
+    if (doprocessTracks || doprocessTracksData || doprocessTracksWeighted) {
       registry.add("h_collisions", "event status;event status;entries", {HistType::kTH1F, {{5, 0.0, 5.0}}});
       registry.add("h2_centrality_collisions", "centrality vs collisions; centrality; collisions", {HistType::kTH2F, {{1200, -10.0, 110.0}, {4, 0.0, 4.0}}});
       registry.add("h3_centrality_track_pt_track_phi", "centrality vs track pT vs track #varphi; centrality; #it{p}_{T,track} (GeV/#it{c}); #varphi_{track}", {HistType::kTH3F, {{1200, -10.0, 110.0}, {200, 0., 200.}, {160, -1.0, 7.}}});
@@ -1407,6 +1407,25 @@ struct JetFinderQATask {
     fillTrackHistograms(collision, tracks, 1., collision.mcCollision().ptHard());
   }
   PROCESS_SWITCH(JetFinderQATask, processTracks, "QA for charged tracks", false);
+
+  void processTracksData(soa::Filtered<aod::JetCollisions>::iterator const& collision,
+                         soa::Filtered<soa::Join<aod::JetTracks, aod::JTrackExtras>> const& tracks)
+  {
+    registry.fill(HIST("h_collisions"), 0.5);
+    registry.fill(HIST("h2_centrality_collisions"), collision.centFT0M(), 0.5);
+    if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits)) {
+      return;
+    }
+    registry.fill(HIST("h_collisions"), 1.5);
+    registry.fill(HIST("h2_centrality_collisions"), collision.centFT0M(), 1.5);
+    if (collision.trackOccupancyInTimeRange() < trackOccupancyInTimeRangeMin || trackOccupancyInTimeRangeMax < collision.trackOccupancyInTimeRange()) {
+      return;
+    }
+    registry.fill(HIST("h_collisions"), 2.5);
+    registry.fill(HIST("h2_centrality_collisions"), collision.centFT0M(), 2.5);
+    fillTrackHistograms(collision, tracks);
+  }
+  PROCESS_SWITCH(JetFinderQATask, processTracksData, "QA for charged tracks in data", false);
 
   void processTracksWeighted(soa::Join<aod::JetCollisions, aod::JMcCollisionLbs>::iterator const& collision,
                              aod::JetMcCollisions const&,
